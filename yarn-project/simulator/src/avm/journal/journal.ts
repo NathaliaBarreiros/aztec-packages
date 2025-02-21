@@ -88,7 +88,10 @@ export class AvmPersistableStateManager {
     /** DB interface for merkle tree operations */
     public db: MerkleTreeWriteOperations,
     public readonly firstNullifier: Fr,
-  ) {}
+    private readonly associatedWorldStateForkId: number,
+  ) {
+    assert(associatedWorldStateForkId == worldStateDB.getActiveForkId(), 'Mismatched world state fork id');
+  }
 
   /**
    * Create a new state manager
@@ -110,6 +113,7 @@ export class AvmPersistableStateManager {
       /*doMerkleOperations=*/ doMerkleOperations,
       db,
       firstNullifier,
+      /*associatedWorldStateForkId=*/ worldStateDB.getActiveForkId(),
     );
   }
 
@@ -117,7 +121,6 @@ export class AvmPersistableStateManager {
    * Create a new state manager forked from this one
    */
   public async fork() {
-    await this.worldStateDB.createCheckpoint();
     return new AvmPersistableStateManager(
       this.worldStateDB,
       this.trace.fork(),
@@ -126,6 +129,7 @@ export class AvmPersistableStateManager {
       this.doMerkleOperations,
       this.db,
       this.firstNullifier,
+      /*associatedWorldStateForkId=*/ await this.worldStateDB.fork(),
     );
   }
 
@@ -154,7 +158,7 @@ export class AvmPersistableStateManager {
     this.nullifiers.acceptAndMerge(forkedState.nullifiers);
     this.trace.merge(forkedState.trace, reverted);
     if (reverted) {
-      await this.worldStateDB.revertCheckpoint();
+      await this.worldStateDB.revert(forkedState.associatedWorldStateForkId);
       if (this.doMerkleOperations) {
         this.log.trace(
           `Rolled back nullifier tree to root ${new Fr((await this.db.getTreeInfo(MerkleTreeId.NULLIFIER_TREE)).root)}`,
@@ -162,7 +166,7 @@ export class AvmPersistableStateManager {
       }
     } else {
       this.log.trace('Merging forked state into parent...');
-      await this.worldStateDB.commitCheckpoint();
+      await this.worldStateDB.commit(forkedState.associatedWorldStateForkId);
     }
   }
 

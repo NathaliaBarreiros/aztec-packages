@@ -33,7 +33,6 @@ import {
   getTelemetryClient,
   trackSpan,
 } from '@aztec/telemetry-client';
-import { ForkCheckpoint } from '@aztec/world-state/native';
 
 import { WorldStateDB } from './public_db_sources.js';
 import { PublicProcessorMetrics } from './public_processor_metrics.js';
@@ -224,7 +223,7 @@ export class PublicProcessor implements Traceable {
       // We checkpoint the transaction here, then within the try/catch we
       // 1. Revert the checkpoint if the tx fails or needs to be discarded for any reason
       // 2. Commit the transaction in the finally block. Note that by using the ForkCheckpoint lifecycle only the first commit/revert takes effect
-      const checkpoint = await ForkCheckpoint.new(this.worldStateDB);
+      const forkId = await this.worldStateDB.fork();
 
       try {
         const [processedTx, returnValues] = await this.processTx(tx, deadline);
@@ -239,7 +238,7 @@ export class PublicProcessor implements Traceable {
             maxBlockSize,
           });
           // Need to revert the checkpoint here and don't go any further
-          await checkpoint.revert();
+          await this.worldStateDB.revert(forkId);
           continue;
         }
 
@@ -256,7 +255,7 @@ export class PublicProcessor implements Traceable {
             this.log.error(`Rejecting tx ${processedTx.hash} after processing: ${reason}.`);
             failed.push({ tx, error: new Error(`Tx failed post-process validation: ${reason}`) });
             // Need to revert the checkpoint here and don't go any further
-            await checkpoint.revert();
+            await this.worldStateDB.revert(forkId);
             continue;
           } else {
             this.log.trace(`Tx ${(await tx.getTxHash()).toString()} is valid post processing.`);
@@ -278,7 +277,7 @@ export class PublicProcessor implements Traceable {
         totalSizeInBytes += txSize;
       } catch (err: any) {
         // Roll back state to start of TX before proceeding to next TX
-        await checkpoint.revert();
+        await this.worldStateDB.revert(forkId);
         if (err?.name === 'PublicProcessorTimeoutError') {
           this.log.warn(`Stopping tx processing due to timeout.`);
           break;
@@ -290,7 +289,7 @@ export class PublicProcessor implements Traceable {
         returns.push(new NestedProcessReturnValues([]));
       } finally {
         // Base case is we always commit the checkpoint. Using the ForkCheckpoint means this has no effect if the tx was reverted
-        await checkpoint.commit();
+        await this.worldStateDB.commit(forkId);
       }
     }
 

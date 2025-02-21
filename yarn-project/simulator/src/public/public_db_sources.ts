@@ -1,9 +1,5 @@
 import { ContractClassTxL2Logs, MerkleTreeId, type Tx } from '@aztec/circuit-types';
-import {
-  type MerkleTreeCheckpointOperations,
-  type MerkleTreeReadOperations,
-  type MerkleTreeWriteOperations,
-} from '@aztec/circuit-types/interfaces/server';
+import { type MerkleTreeReadOperations, type MerkleTreeWriteOperations } from '@aztec/circuit-types/interfaces/server';
 import { type PublicDBAccessStats } from '@aztec/circuit-types/stats';
 import {
   type AztecAddress,
@@ -21,6 +17,8 @@ import { createLogger } from '@aztec/foundation/log';
 import { Timer } from '@aztec/foundation/timer';
 import { ContractClassRegisteredEvent } from '@aztec/protocol-contracts/class-registerer';
 import { ContractInstanceDeployedEvent } from '@aztec/protocol-contracts/instance-deployer';
+
+import { strict as assert } from 'assert';
 
 import { type PublicContractsDB, type PublicStateDB } from './db_interfaces.js';
 
@@ -143,32 +141,45 @@ export class ContractsDataSourcePublicDB implements PublicContractsDB {
 /**
  * A public state DB that reads and writes to the world state.
  */
-export class WorldStateDB extends ContractsDataSourcePublicDB implements PublicStateDB, MerkleTreeCheckpointOperations {
+export class WorldStateDB extends ContractsDataSourcePublicDB implements PublicStateDB {
   private logger = createLogger('simulator:world-state-db');
+  private activeFork = 0;
 
   constructor(public db: MerkleTreeWriteOperations, dataSource: ContractDataSource) {
     super(dataSource);
   }
 
-  /**
-   * Checkpoints the current fork state
-   */
-  public async createCheckpoint() {
-    await this.db.createCheckpoint();
+  public getActiveForkId(): number {
+    return this.activeFork;
   }
 
   /**
-   * Commits the current checkpoint
+   * Forks the merkle trees, creating a new checkpoint.
    */
-  public async commitCheckpoint() {
+  public async fork(): Promise<number> {
+    await this.db.createCheckpoint();
+    this.activeFork++;
+    return this.activeFork;
+  }
+
+  /**
+   * Commits the current forked state, essentially merging
+   */
+  public async commit(forkId: number): Promise<number> {
+    assert(forkId === this.activeFork, 'Trying to commit a fork that is not the active one');
     await this.db.commitCheckpoint();
+    this.activeFork--;
+    return this.activeFork;
   }
 
   /**
    * Reverts the current checkpoint
    */
-  public async revertCheckpoint() {
+  public async revert(forkId: number): Promise<number> {
+    assert(forkId === this.activeFork, 'Trying to revert a fork that is not the active one');
     await this.db.revertCheckpoint();
+    this.activeFork--;
+    return this.activeFork;
   }
 
   public getMerkleInterface(): MerkleTreeWriteOperations {
