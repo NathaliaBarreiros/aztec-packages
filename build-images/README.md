@@ -40,7 +40,7 @@ If the image needs to be changed, decide if the old image is still needed, in wh
 Only do this if essential. To rebuild images and push to dockerhub run:
 
 ```
-$ ./bootstrap.sh ci
+$ ./bootstrap.sh deploy
 ```
 
 This will launch x86 and arm machines to build the images, and then push them to Dockerhub.
