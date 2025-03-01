@@ -58,7 +58,7 @@ CI uses AMI's with the image preloaded on them. To update the AMIs:
 $ ./bootstrap.sh amis
 ```
 
-- Update `./ci3/aws_request_instance` hardcoded AMI id's with the new ones given.
+- AMI id's will be updated in current working tree.
 - Commit.
 
 ## Sysbox
