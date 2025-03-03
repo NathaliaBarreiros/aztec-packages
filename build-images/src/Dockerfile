@@ -217,6 +217,7 @@ RUN apt update && \
         psmisc \
         python3-blessed \
         redis-tools \
+        rsync \
         software-properties-common \
         ssh \
         strace \
