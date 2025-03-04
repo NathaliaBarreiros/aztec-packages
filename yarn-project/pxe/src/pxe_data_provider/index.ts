@@ -112,7 +112,10 @@ export class PXEDataProvider implements ExecutionDataProvider {
     }));
   }
 
-  async getFunctionArtifact(contractAddress: AztecAddress, selector: FunctionSelector): Promise<FunctionArtifactWithContractName> {
+  async getFunctionArtifact(
+    contractAddress: AztecAddress,
+    selector: FunctionSelector,
+  ): Promise<FunctionArtifactWithContractName> {
     const artifact = await this.contractDataProvider.getFunctionArtifact(contractAddress, selector);
     const debug = await this.contractDataProvider.getFunctionDebugMetadata(contractAddress, selector);
     return {
