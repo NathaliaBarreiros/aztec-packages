@@ -2,6 +2,7 @@
 /// Oracles module
 // docs:end:oracles-module
 
+pub mod address_secret;
 pub mod aes128_decrypt;
 pub mod block_header;
 pub mod call_private_function;

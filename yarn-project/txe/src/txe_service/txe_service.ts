@@ -578,6 +578,11 @@ export class TXEService {
     return toForeignCallResult(arrayToBoundedVec(bufferToU8Array(plaintextBuffer), ciphertextBuffer.length));
   }
 
+  async getAddressSecret(address: ForeignCallSingle) {
+    const secret = await this.typedOracle.getAddressSecret(AztecAddress.fromField(fromSingle(address)));
+    return toForeignCallResult([toArray(secret.toFields())]);
+  }
+
   // AVM opcodes
 
   avmOpcodeEmitUnencryptedLog(_message: ForeignCallArray) {

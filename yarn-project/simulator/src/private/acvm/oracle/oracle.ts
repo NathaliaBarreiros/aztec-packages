@@ -452,4 +452,9 @@ export class Oracle {
       frToNumber(fromACVMField(numEntries)),
     );
   }
+
+  async getAddressSecret([address]: ACVMField[]): Promise<ACVMField[]> {
+    const secret = await this.typedOracle.getAddressSecret(AztecAddress.fromField(fromACVMField(address)));
+    return secret.toFields().map(toACVMField);
+  }
 }

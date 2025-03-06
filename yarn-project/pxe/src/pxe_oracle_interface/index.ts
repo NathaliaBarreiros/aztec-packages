@@ -6,7 +6,7 @@ import {
 } from '@aztec/constants';
 import { timesParallel } from '@aztec/foundation/collection';
 import { poseidon2Hash } from '@aztec/foundation/crypto';
-import { Fr } from '@aztec/foundation/fields';
+import { Fr, GrumpkinScalar } from '@aztec/foundation/fields';
 import { createLogger } from '@aztec/foundation/log';
 import { BufferReader } from '@aztec/foundation/serialize';
 import type { KeyStore } from '@aztec/key-store';
@@ -889,6 +889,14 @@ export class PXEOracleInterface implements ExecutionDataProvider {
 
   copyCapsule(contractAddress: AztecAddress, srcSlot: Fr, dstSlot: Fr, numEntries: number): Promise<void> {
     return this.capsuleDataProvider.copyCapsule(contractAddress, srcSlot, dstSlot, numEntries);
+  }
+
+  async getAddressSecret(address: AztecAddress): Promise<GrumpkinScalar> {
+    const recipientCompleteAddress = await this.getCompleteAddress(address);
+    const ivskM = await this.keyStore.getMasterSecretKey(
+      recipientCompleteAddress.publicKeys.masterIncomingViewingPublicKey,
+    );
+    return computeAddressSecret(await recipientCompleteAddress.getPreaddress(), ivskM);
   }
 }
 

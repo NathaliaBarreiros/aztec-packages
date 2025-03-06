@@ -21,6 +21,10 @@ use crate::discovery::{
         DELIVERED_PENDING_PARTIAL_NOTE_ARRAY_LENGTH_CAPSULES_SLOT, DeliveredPendingPartialNote,
     },
 };
+use crate::encrypted_logs::encrypt::aes128::derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_sha256;
+use crate::encrypted_logs::log_assembly_strategies::default_aes128::note::HEADER_CIPHERTEXT_SIZE_IN_BYTES;
+use crate::keys::ecdh_shared_secret::derive_ecdh_shared_secret;
+use crate::oracle::address_secret::get_address_secret_oracle;
 use crate::utils::bytes::fields_to_be_bytes_31;
 use crate::utils::point::point_from_x_coord_and_sign;
 
@@ -96,6 +100,7 @@ pub unconstrained fn do_process_log<Env>(
 }
 
 unconstrained fn decrypt_log(
+    // TODO: the following is wrong as ciphertext size is different from the plaintext size
     log_ciphertext: BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS>,
     recipient: AztecAddress,
 ) -> BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS> {
@@ -111,26 +116,18 @@ unconstrained fn decrypt_log(
     let eph_pk_sign_bool = log_bytes.get(0) as bool;
     let eph_pk = point_from_x_coord_and_sign(eph_pk_x, eph_pk_sign_bool);
 
-    // Extract header ciphertext
-    let header_ciphertext = array::subarray(log_bytes, 1, HEADER_CIPHERTEXT_SIZE_IN_BYTES + 1);
+    // We don't care about the header ciphertext, so we can just skip it (it only contains the contract address
+    // and we know that thanks to tagging. Having the header in the ciphertext is a tech debt).
+    // HEADER_CIPHERTEXT_SIZE_IN_BYTES is 48 bytes
 
     // Get recipient's secret key
-    let recipient_sk = unsafe { get_address_secret(recipient) };
+    let recipient_sk = get_address_secret_oracle(recipient);
 
     // Derive shared secret and symmetric key
-    let ciphertext_shared_secret =
-        derive_ecdh_shared_secret_using_aztec_address_secret(recipient_sk, eph_pk);
+    let ciphertext_shared_secret = derive_ecdh_shared_secret(recipient_sk, eph_pk);
     let (sym_key, iv) = derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_sha256(
         ciphertext_shared_secret,
     );
-
-    // Decrypt header
-    let header_plaintext = aes128_decrypt_oracle(header_ciphertext, iv, sym_key);
-
-    // Extract contract address and ciphertext length from header
-    let contract_address_bytes = array::subarray(header_plaintext.storage(), 0, 32);
-    let ciphertext_length =
-        ((header_plaintext.storage()[32] as u32) << 8) | (header_plaintext.storage()[33] as u32);
 
     // Extract and decrypt main ciphertext
     let ciphertext_start = HEADER_CIPHERTEXT_SIZE_IN_BYTES + 1;

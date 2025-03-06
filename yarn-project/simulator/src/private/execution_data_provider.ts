@@ -1,4 +1,4 @@
-import type { Fr } from '@aztec/foundation/fields';
+import type { Fr, GrumpkinScalar } from '@aztec/foundation/fields';
 import type { FunctionArtifact, FunctionSelector } from '@aztec/stdlib/abi';
 import type { AztecAddress } from '@aztec/stdlib/aztec-address';
 import type { L2Block } from '@aztec/stdlib/block';
@@ -321,4 +321,11 @@ export interface ExecutionDataProvider extends CommitmentsDB {
    * @param numEntries - The number of entries to copy.
    */
   copyCapsule(contractAddress: AztecAddress, srcSlot: Fr, dstSlot: Fr, numEntries: number): Promise<void>;
+
+  /**
+   * Retrieves the secret for a given address.
+   * @param address
+   * @returns The secret for the given address.
+   */
+  getAddressSecret(address: AztecAddress): Promise<GrumpkinScalar>;
 }
