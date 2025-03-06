@@ -21,6 +21,8 @@ use crate::discovery::{
         DELIVERED_PENDING_PARTIAL_NOTE_ARRAY_LENGTH_CAPSULES_SLOT, DeliveredPendingPartialNote,
     },
 };
+use crate::utils::bytes::fields_to_be_bytes_31;
+use crate::utils::point::point_from_x_coord_and_sign;
 
 pub global PARTIAL_NOTE_COMPLETION_LOG_TAG_LEN: u32 = 1;
 /// Partial notes have a maximum packed length of their private fields bound by extra content in their private log (i.e.
@@ -42,22 +44,24 @@ pub unconstrained fn fetch_and_process_private_tagged_logs<Env>(
     sync_notes();
 }
 
-/// Processes a log's plaintext, searching for private notes or partial notes. Private notes result in nonce discovery
-/// being performed prior to delivery, which requires knowledge of the transaction hash in which the notes would've been
-/// created (typically the same transaction in which the log was emitted), along with the list of unique note hashes in
-/// said transaction and the `compute_note_hash_and_nullifier` function.
+/// Processes a log's ciphertext by decrypting it, searching for private notes or partial notes. Private notes result in
+/// nonce discovery being performed prior to delivery, which requires knowledge of the transaction hash in which the notes
+/// would've been created (typically the same transaction in which the log was emitted), along with the list of unique
+/// note hashes in said transaction and the `compute_note_hash_and_nullifier` function.
 pub unconstrained fn do_process_log<Env>(
     contract_address: AztecAddress,
-    log_plaintext: BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS>,
+    log_ciphertext: BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS>,
     tx_hash: Field,
     unique_note_hashes_in_tx: BoundedVec<Field, MAX_NOTE_HASHES_PER_TX>,
     first_nullifier_in_tx: Field,
     recipient: AztecAddress,
     compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
 ) {
-    // The first thing to do is to determine what type of private log we're processing. We currently just have two log
-    // types: 0 for private notes and 1 for partial notes. This will likely be expanded and improved upon in the future
-    // to also handle events, etc.
+    let log_plaintext = decrypt_log(log_ciphertext, recipient);
+
+    // The first thing to do after decrypting the log is to determine what type of private log we're processing. We
+    // currently just have two log types: 0 for private notes and 1 for partial notes. This will likely be expanded and
+    // improved upon in the future to also handle events, etc.
 
     let (storage_slot, note_type_id, log_type_id, log_payload) =
         destructure_log_plaintext(log_plaintext);
@@ -89,6 +93,65 @@ pub unconstrained fn do_process_log<Env>(
     } else {
         panic(f"Unknown log type id {log_type_id}");
     }
+}
+
+unconstrained fn decrypt_log(
+    log_ciphertext: BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS>,
+    recipient: AztecAddress,
+) -> BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS> {
+    // let tag = log_ciphertext.get(0);
+    let eph_pk_x = log_ciphertext.get(1);
+
+    // Convert fields to bytes for the remaining data
+    let log_bytes: BoundedVec<u8, (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31> = BoundedVec::from_array(
+        fields_to_be_bytes_31(array::subbvec(log_ciphertext, 2).storage()),
+    );
+
+    // Extract ephemeral public key sign byte
+    let eph_pk_sign_bool = log_bytes.get(0) as bool;
+    let eph_pk = point_from_x_coord_and_sign(eph_pk_x, eph_pk_sign_bool);
+
+    // Extract header ciphertext
+    let header_ciphertext = array::subarray(log_bytes, 1, HEADER_CIPHERTEXT_SIZE_IN_BYTES + 1);
+
+    // Get recipient's secret key
+    let recipient_sk = unsafe { get_address_secret(recipient) };
+
+    // Derive shared secret and symmetric key
+    let ciphertext_shared_secret =
+        derive_ecdh_shared_secret_using_aztec_address_secret(recipient_sk, eph_pk);
+    let (sym_key, iv) = derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_sha256(
+        ciphertext_shared_secret,
+    );
+
+    // Decrypt header
+    let header_plaintext = aes128_decrypt_oracle(header_ciphertext, iv, sym_key);
+
+    // Extract contract address and ciphertext length from header
+    let contract_address_bytes = array::subarray(header_plaintext.storage(), 0, 32);
+    let ciphertext_length =
+        ((header_plaintext.storage()[32] as u32) << 8) | (header_plaintext.storage()[33] as u32);
+
+    // Extract and decrypt main ciphertext
+    let ciphertext_start = HEADER_CIPHERTEXT_SIZE_IN_BYTES + 1;
+    let ciphertext = array::subarray(
+        log_bytes,
+        ciphertext_start,
+        ciphertext_start + ciphertext_length,
+    );
+    let plaintext = aes128_decrypt_oracle(ciphertext, iv, sym_key);
+
+    // Convert plaintext bytes back to fields
+    let mut decrypted_log = BoundedVec::new(PRIVATE_LOG_SIZE_IN_FIELDS);
+    decrypted_log.push(tag);
+    decrypted_log.push(eph_pk_x);
+
+    let plaintext_fields = be_bytes_31_to_fields(plaintext.storage());
+    for field in plaintext_fields {
+        decrypted_log.push(field);
+    }
+
+    decrypted_log
 }
 
 unconstrained fn destructure_log_plaintext(

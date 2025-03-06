@@ -239,10 +239,11 @@ export interface ExecutionDataProvider extends CommitmentsDB {
 
   /**
    * Processes the tagged logs returned by syncTaggedLogs by decrypting them and storing them in the database.
+   * @param contractAddress - The address of the contract that the logs are tagged for.
    * @param logs - The logs to process.
    * @param recipient - The recipient of the logs.
    */
-  processTaggedLogs(logs: TxScopedL2Log[], recipient: AztecAddress): Promise<void>;
+  processTaggedLogs(contractAddress: AztecAddress, logs: TxScopedL2Log[], recipient: AztecAddress): Promise<void>;
 
   /**
    * Delivers the preimage and metadata of a committed note so that it can be later requested via the `getNotes`
