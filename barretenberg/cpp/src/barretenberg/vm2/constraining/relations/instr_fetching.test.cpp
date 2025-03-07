@@ -190,6 +190,7 @@ TEST(InstrFetchingConstrainingTest, WireInstructionSpecInteractions)
 
     PrecomputedTraceBuilder precomputed_builder;
     precomputed_builder.process_wire_instruction_spec(trace);
+    precomputed_builder.process_sel_range_8(trace);
     bytecode_builder.process_instruction_fetching(gen_instr_events_each_opcode(), trace);
     precomputed_builder.process_misc(trace, trace.get_num_rows()); // Limit to the number of rows we need.
 
@@ -246,6 +247,7 @@ TEST(InstrFetchingConstrainingTest, NegativeWrongWireInstructionSpecInteractions
                 .bytecode = std::make_shared<std::vector<uint8_t>>(instr.serialize()) } },
             trace);
         precomputed_builder.process_wire_instruction_spec(trace);
+        precomputed_builder.process_sel_range_8(trace);
         precomputed_builder.process_misc(trace, trace.get_num_rows()); // Limit to the number of rows we need.
 
         LookupIntoIndexedByClk<wire_instr_spec_lookup::Settings>().process(trace);
@@ -254,12 +256,12 @@ TEST(InstrFetchingConstrainingTest, NegativeWrongWireInstructionSpecInteractions
         check_interaction<wire_instr_spec_lookup>(trace);
 
         constexpr std::array<C, 20> mutated_cols = {
-            C::instr_fetching_exec_opcode,  C::instr_fetching_instr_size_in_bytes, C::instr_fetching_sel_op_dc_0,
-            C::instr_fetching_sel_op_dc_1,  C::instr_fetching_sel_op_dc_2,         C::instr_fetching_sel_op_dc_3,
-            C::instr_fetching_sel_op_dc_4,  C::instr_fetching_sel_op_dc_5,         C::instr_fetching_sel_op_dc_6,
-            C::instr_fetching_sel_op_dc_7,  C::instr_fetching_sel_op_dc_8,         C::instr_fetching_sel_op_dc_9,
-            C::instr_fetching_sel_op_dc_10, C::instr_fetching_sel_op_dc_11,        C::instr_fetching_sel_op_dc_12,
-            C::instr_fetching_sel_op_dc_13, C::instr_fetching_sel_op_dc_14,        C::instr_fetching_sel_op_dc_15,
+            C::instr_fetching_exec_opcode,  C::instr_fetching_instr_size,   C::instr_fetching_sel_op_dc_0,
+            C::instr_fetching_sel_op_dc_1,  C::instr_fetching_sel_op_dc_2,  C::instr_fetching_sel_op_dc_3,
+            C::instr_fetching_sel_op_dc_4,  C::instr_fetching_sel_op_dc_5,  C::instr_fetching_sel_op_dc_6,
+            C::instr_fetching_sel_op_dc_7,  C::instr_fetching_sel_op_dc_8,  C::instr_fetching_sel_op_dc_9,
+            C::instr_fetching_sel_op_dc_10, C::instr_fetching_sel_op_dc_11, C::instr_fetching_sel_op_dc_12,
+            C::instr_fetching_sel_op_dc_13, C::instr_fetching_sel_op_dc_14, C::instr_fetching_sel_op_dc_15,
             C::instr_fetching_sel_op_dc_16, C::instr_fetching_sel_op_dc_17,
         };
 
