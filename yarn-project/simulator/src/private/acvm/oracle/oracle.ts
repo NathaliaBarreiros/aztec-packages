@@ -1,4 +1,4 @@
-import { Fr } from '@aztec/foundation/fields';
+import { Fr, Point } from '@aztec/foundation/fields';
 import { FunctionSelector, NoteSelector } from '@aztec/stdlib/abi';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
 import { ContractClassLog, LogWithTxData } from '@aztec/stdlib/logs';
@@ -453,8 +453,11 @@ export class Oracle {
     );
   }
 
-  async getAddressSecret([address]: ACVMField[]): Promise<ACVMField[]> {
-    const secret = await this.typedOracle.getAddressSecret(AztecAddress.fromField(fromACVMField(address)));
+  async getSharedSecret([address]: ACVMField[], ephPk: ACVMField[]): Promise<ACVMField[]> {
+    const secret = await this.typedOracle.getSharedSecret(
+      AztecAddress.fromField(fromACVMField(address)),
+      Point.fromFields(ephPk.map(fromACVMField)),
+    );
     return secret.toFields().map(toACVMField);
   }
 }

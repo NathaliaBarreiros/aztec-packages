@@ -2,7 +2,6 @@
 /// Oracles module
 // docs:end:oracles-module
 
-pub mod address_secret;
 pub mod aes128_decrypt;
 pub mod block_header;
 pub mod call_private_function;
@@ -21,6 +20,7 @@ pub mod logs;
 pub mod note_discovery;
 pub mod notes;
 pub mod random;
+pub mod shared_secret;
 pub mod storage;
 
 // debug_log oracle is used by both noir-protocol-circuits and this crate and for this reason we just re-export it

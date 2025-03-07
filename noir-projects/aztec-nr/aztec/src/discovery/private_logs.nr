@@ -23,11 +23,8 @@ use crate::discovery::{
 };
 use crate::encrypted_logs::encrypt::aes128::derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_sha256;
 use crate::encrypted_logs::log_assembly_strategies::default_aes128::note::HEADER_CIPHERTEXT_SIZE_IN_BYTES;
-use crate::keys::ecdh_shared_secret::derive_ecdh_shared_secret;
-use crate::oracle::address_secret::get_address_secret_oracle;
 use crate::oracle::aes128_decrypt::aes128_decrypt_oracle;
-use crate::utils::bytes::be_bytes_31_to_fields;
-use crate::utils::bytes::fields_to_be_bytes_31;
+use crate::oracle::shared_secret::get_shared_secret_oracle;
 use crate::utils::point::point_from_x_coord_and_sign;
 
 pub global PARTIAL_NOTE_COMPLETION_LOG_TAG_LEN: u32 = 1;
@@ -35,6 +32,9 @@ pub global PARTIAL_NOTE_COMPLETION_LOG_TAG_LEN: u32 = 1;
 /// the note completion log tag).
 pub global MAX_PARTIAL_NOTE_PRIVATE_PACKED_LEN: u32 =
     MAX_NOTE_PACKED_LEN - PARTIAL_NOTE_COMPLETION_LOG_TAG_LEN;
+
+// TODO: Should this be somehow derived from MAX_PARTIAL_NOTE_PRIVATE_PACKED_LEN?
+pub global PRIVATE_LOG_PLAINTEXT_SIZE_IN_FIELDS: u32 = 15;
 
 /// Searches for private logs that signal new private notes that are then delivered to PXE, or new partial notes that
 /// are stored in the PXE capsules so that `fetch_and_process_public_partial_note_completion_logs` can later search for
@@ -105,45 +105,46 @@ unconstrained fn decrypt_log(
     // TODO: the following is wrong as ciphertext size is different from the plaintext size
     log_ciphertext: BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS>,
     recipient: AztecAddress,
-) -> BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS> {
+) -> BoundedVec<Field, PRIVATE_LOG_PLAINTEXT_SIZE_IN_FIELDS> {
     // let tag = log_ciphertext.get(0);
     let eph_pk_x = log_ciphertext.get(1);
 
     // Convert fields to bytes for the remaining data
-    let log_bytes: [u8; (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31] =
-        fields_to_be_bytes_31(array::subbvec(log_ciphertext, 2).storage());
+    let log_bytes = fields_to_be_bytes_31::<(PRIVATE_LOG_SIZE_IN_FIELDS - 2), (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31>(
+        array::subbvec(log_ciphertext, 2),
+    );
 
     // Extract ephemeral public key sign byte
-    let eph_pk_sign_bool = log_bytes[0] as bool;
+    let eph_pk_sign_bool = log_bytes.get(0) as bool;
     let eph_pk = point_from_x_coord_and_sign(eph_pk_x, eph_pk_sign_bool);
 
     // We don't care about the header ciphertext, so we can just skip it (it only contains the contract address
     // and we know that thanks to tagging. Having the header in the ciphertext is a tech debt).
     // HEADER_CIPHERTEXT_SIZE_IN_BYTES is 48 bytes
 
-    // Get recipient's secret key
-    let recipient_sk = get_address_secret_oracle(recipient);
-
     // Derive shared secret and symmetric key
-    let ciphertext_shared_secret = derive_ecdh_shared_secret(recipient_sk, eph_pk);
+    // TODO: Obtain siloed secret from oracle and then derive shared secret in Noir instead of obtaining it directly
+    // from TS.
+    let ciphertext_shared_secret = get_shared_secret_oracle(recipient, eph_pk);
+    // let ciphertext_shared_secret = derive_ecdh_shared_secret(recipient_sk, eph_pk);
     let (sym_key, iv) = derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_sha256(
         ciphertext_shared_secret,
     );
 
     // Extract and decrypt main ciphertext
     let ciphertext_start = HEADER_CIPHERTEXT_SIZE_IN_BYTES + 1;
-    let ciphertext: [u8; (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31 - HEADER_CIPHERTEXT_SIZE_IN_BYTES - 1] =
-        array::subarray(log_bytes, ciphertext_start);
-    let plaintext_bytes = aes128_decrypt_oracle(ciphertext, iv, sym_key);
+    let ciphertext: BoundedVec<u8, (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31 - HEADER_CIPHERTEXT_SIZE_IN_BYTES - 1> =
+        array::subbvec(log_bytes, ciphertext_start);
+
+    // TODO: Update the oracle to accept BoundedVec on input
+    let plaintext_bytes = aes128_decrypt_oracle(ciphertext.storage(), iv, sym_key);
 
     // Convert plaintext bytes back to fields, we wrap it in BoundedVec and return it
-    let plaintext_fields = be_bytes_31_to_fields(plaintext_bytes.storage());
-    let real_length = plaintext_bytes.len() / 31;
-    BoundedVec::from_array(plaintext_fields)
+    be_bytes_31_to_fields(plaintext_bytes)
 }
 
 unconstrained fn destructure_log_plaintext(
-    log_plaintext: BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS>,
+    log_plaintext: BoundedVec<Field, PRIVATE_LOG_PLAINTEXT_SIZE_IN_FIELDS>,
 ) -> (Field, Field, Field, BoundedVec<Field, MAX_NOTE_PACKED_LEN>) {
     assert(log_plaintext.len() >= NOTE_PRIVATE_LOG_RESERVED_FIELDS);
 
@@ -245,4 +246,92 @@ unconstrained fn process_partial_note_private_log(
         DELIVERED_PENDING_PARTIAL_NOTE_ARRAY_LENGTH_CAPSULES_SLOT,
     )
         .push(pending);
+}
+
+// TODO: NUKE THE REST OF THE FILE - COPIED HERE TO UNBLOCK MYSELF
+pub fn be_bytes_31_to_fields<let N: u32>(
+    bytes: BoundedVec<u8, N>,
+) -> BoundedVec<Field, (N + 30) / 31> {
+    let mut fields = BoundedVec::new();
+
+    // There are "bytes.len() / 31" whole fields that can be populated.
+    for i in 0..bytes.len() / 31 {
+        let mut field = 0;
+        for j in 0..31 {
+            // Shift the existing value left by 8 bits and add the new byte
+            field = field * 256 + bytes.get(i * 31 + j) as Field;
+        }
+        fields.push(field);
+    }
+
+    // Note: if 31 divides bytes.len(), then this loop does not execute.
+    // ceil(bytes.len()/31) - floor(bytes.len()/31) = 1, unless 31 divides bytes.len(), in which case it's 0.
+    for _ in 0..((bytes.len() + 30) / 31) - (bytes.len() / 31) {
+        let mut final_field = 0;
+        let final_field_idx = fields.len();
+        let final_offset = final_field_idx * 31;
+        // bytes.len() - ((bytes.len() / 31) * 31) = bytes.len() - floor(bytes.len()/31) * 31 = the number of bytes
+        // to go in the final field.
+        for j in 0..bytes.len() - ((bytes.len() / 31) * 31) {
+            // Shift the existing value left by 8 bits and add the new byte
+            final_field = final_field * 256 + bytes.get(final_offset + j) as Field;
+        }
+
+        fields.push(final_field);
+    }
+
+    fields
+}
+
+pub fn fields_to_be_bytes_31<let N: u32, let M: u32>(
+    fields: BoundedVec<Field, N>,
+) -> BoundedVec<u8, M> {
+    let mut bytes = BoundedVec::new();
+
+    // Given the input is N fields, and each field (except the last) is mapped to 31 bytes,
+    // we check that M > (N - 1) * 31 to cover those first (N - 1) fields.
+    std::static_assert(M > (N - 1) * 31, "Not enough output bytes specified");
+    // We make this assertion to keep the logic simpler:
+    std::static_assert(N * 31 >= M, "Too many output bytes specified.");
+
+    // Since we are dealing with a BoundedVec and not an array, the input might not contain N fields but less. Since
+    // the last field can contain less info than 31 bytes if the input is fully populated (due to the flexible M
+    // parameter), we need to handle that case separately.
+    let input_full = fields.len() == N;
+
+    let num_full_fields = if input_full {
+        // Input is full so we need to handle the last field separately.
+        fields.len() - 1
+    } else {
+        // Input is not full so all the fields are expected to contain 31 bytes of information.
+        fields.len()
+    };
+
+    for i in 0..num_full_fields {
+        let field = fields.get(i);
+
+        // We expect that the field contains at most 31 bytes of information.
+        field.assert_max_bit_size::<248>();
+
+        // Now we can safely convert the field to 31 bytes.
+        let field_as_bytes: [u8; 31] = field.to_be_bytes();
+
+        for j in 0..31 {
+            bytes.push(field_as_bytes[j]);
+        }
+    }
+
+    if (input_full) {
+        let final_field = fields.get(fields.len() - 1);
+
+        final_field.assert_max_bit_size::<8 * (M - ((N - 1) * 31))>();
+
+        let final_field_as_bytes: [u8; M - ((N - 1) * 31)] = final_field.to_be_bytes();
+
+        for j in 0..M - ((N - 1) * 31) {
+            bytes.push(final_field_as_bytes[j]);
+        }
+    }
+
+    bytes
 }

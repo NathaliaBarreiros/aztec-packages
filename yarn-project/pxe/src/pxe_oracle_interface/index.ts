@@ -6,12 +6,16 @@ import {
 } from '@aztec/constants';
 import { timesParallel } from '@aztec/foundation/collection';
 import { poseidon2Hash } from '@aztec/foundation/crypto';
-import { Fr, GrumpkinScalar } from '@aztec/foundation/fields';
+import { Fr, Point } from '@aztec/foundation/fields';
 import { createLogger } from '@aztec/foundation/log';
 import { BufferReader } from '@aztec/foundation/serialize';
 import type { KeyStore } from '@aztec/key-store';
-import { AcirSimulator, type ExecutionDataProvider, type SimulationProvider } from '@aztec/simulator/client';
-import { MessageLoadOracleInputs } from '@aztec/simulator/client';
+import {
+  AcirSimulator,
+  type ExecutionDataProvider,
+  MessageLoadOracleInputs,
+  type SimulationProvider,
+} from '@aztec/simulator/client';
 import {
   type FunctionArtifact,
   FunctionCall,
@@ -35,6 +39,7 @@ import { MerkleTreeId, type NullifierMembershipWitness, PublicDataWitness } from
 import type { BlockHeader } from '@aztec/stdlib/tx';
 import { TxHash } from '@aztec/stdlib/tx';
 
+import { deriveEcdhSharedSecret } from '../../../stdlib/src/logs/l1_payload/shared_secret_derivation.js';
 import type { AddressDataProvider } from '../storage/address_data_provider/address_data_provider.js';
 import type { AuthWitnessDataProvider } from '../storage/auth_witness_data_provider/auth_witness_data_provider.js';
 import type { CapsuleDataProvider } from '../storage/capsule_data_provider/capsule_data_provider.js';
@@ -891,12 +896,13 @@ export class PXEOracleInterface implements ExecutionDataProvider {
     return this.capsuleDataProvider.copyCapsule(contractAddress, srcSlot, dstSlot, numEntries);
   }
 
-  async getAddressSecret(address: AztecAddress): Promise<GrumpkinScalar> {
+  async getSharedSecret(address: AztecAddress, ephPk: Point): Promise<Point> {
     const recipientCompleteAddress = await this.getCompleteAddress(address);
     const ivskM = await this.keyStore.getMasterSecretKey(
       recipientCompleteAddress.publicKeys.masterIncomingViewingPublicKey,
     );
-    return computeAddressSecret(await recipientCompleteAddress.getPreaddress(), ivskM);
+    const addressSecret = await computeAddressSecret(await recipientCompleteAddress.getPreaddress(), ivskM);
+    return deriveEcdhSharedSecret(addressSecret, ephPk);
   }
 }
 

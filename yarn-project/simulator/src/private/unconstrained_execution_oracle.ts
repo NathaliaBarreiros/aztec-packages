@@ -1,5 +1,5 @@
 import { Aes128 } from '@aztec/foundation/crypto';
-import { Fr, GrumpkinScalar } from '@aztec/foundation/fields';
+import { Fr, Point } from '@aztec/foundation/fields';
 import { applyStringFormatting, createLogger } from '@aztec/foundation/log';
 import type { AuthWitness } from '@aztec/stdlib/auth-witness';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
@@ -376,7 +376,7 @@ export class UnconstrainedExecutionOracle extends TypedOracle {
     return aes128.decryptBufferCBC(ciphertext, iv, symKey);
   }
 
-  public override getAddressSecret(address: AztecAddress): Promise<GrumpkinScalar> {
-    return this.executionDataProvider.getAddressSecret(address);
+  public override getSharedSecret(address: AztecAddress, ephPk: Point): Promise<Point> {
+    return this.executionDataProvider.getSharedSecret(address, ephPk);
   }
 }

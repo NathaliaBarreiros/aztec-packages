@@ -12,7 +12,7 @@ import {
 } from '@aztec/constants';
 import { padArrayEnd } from '@aztec/foundation/collection';
 import { Aes128, Schnorr, poseidon2Hash } from '@aztec/foundation/crypto';
-import { Fr, GrumpkinScalar } from '@aztec/foundation/fields';
+import { Fr, Point } from '@aztec/foundation/fields';
 import { type Logger, applyStringFormatting } from '@aztec/foundation/log';
 import { Timer } from '@aztec/foundation/timer';
 import { KeyStore } from '@aztec/key-store';
@@ -1248,7 +1248,7 @@ export class TXE implements TypedOracle {
     return aes128.decryptBufferCBC(ciphertext, iv, symKey);
   }
 
-  getAddressSecret(address: AztecAddress): Promise<GrumpkinScalar> {
-    return this.pxeOracleInterface.getAddressSecret(address);
+  getSharedSecret(address: AztecAddress, ephPk: Point): Promise<Point> {
+    return this.pxeOracleInterface.getSharedSecret(address, ephPk);
   }
 }
