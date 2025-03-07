@@ -25,6 +25,8 @@ use crate::encrypted_logs::encrypt::aes128::derive_aes_symmetric_key_and_iv_from
 use crate::encrypted_logs::log_assembly_strategies::default_aes128::note::HEADER_CIPHERTEXT_SIZE_IN_BYTES;
 use crate::keys::ecdh_shared_secret::derive_ecdh_shared_secret;
 use crate::oracle::address_secret::get_address_secret_oracle;
+use crate::oracle::aes128_decrypt::aes128_decrypt_oracle;
+use crate::utils::bytes::be_bytes_31_to_fields;
 use crate::utils::bytes::fields_to_be_bytes_31;
 use crate::utils::point::point_from_x_coord_and_sign;
 
@@ -108,12 +110,11 @@ unconstrained fn decrypt_log(
     let eph_pk_x = log_ciphertext.get(1);
 
     // Convert fields to bytes for the remaining data
-    let log_bytes: BoundedVec<u8, (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31> = BoundedVec::from_array(
-        fields_to_be_bytes_31(array::subbvec(log_ciphertext, 2).storage()),
-    );
+    let log_bytes: [u8; (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31] =
+        fields_to_be_bytes_31(array::subbvec(log_ciphertext, 2).storage());
 
     // Extract ephemeral public key sign byte
-    let eph_pk_sign_bool = log_bytes.get(0) as bool;
+    let eph_pk_sign_bool = log_bytes[0] as bool;
     let eph_pk = point_from_x_coord_and_sign(eph_pk_x, eph_pk_sign_bool);
 
     // We don't care about the header ciphertext, so we can just skip it (it only contains the contract address
@@ -131,24 +132,14 @@ unconstrained fn decrypt_log(
 
     // Extract and decrypt main ciphertext
     let ciphertext_start = HEADER_CIPHERTEXT_SIZE_IN_BYTES + 1;
-    let ciphertext = array::subarray(
-        log_bytes,
-        ciphertext_start,
-        ciphertext_start + ciphertext_length,
-    );
-    let plaintext = aes128_decrypt_oracle(ciphertext, iv, sym_key);
+    let ciphertext: [u8; (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31 - HEADER_CIPHERTEXT_SIZE_IN_BYTES - 1] =
+        array::subarray(log_bytes, ciphertext_start);
+    let plaintext_bytes = aes128_decrypt_oracle(ciphertext, iv, sym_key);
 
-    // Convert plaintext bytes back to fields
-    let mut decrypted_log = BoundedVec::new(PRIVATE_LOG_SIZE_IN_FIELDS);
-    decrypted_log.push(tag);
-    decrypted_log.push(eph_pk_x);
-
-    let plaintext_fields = be_bytes_31_to_fields(plaintext.storage());
-    for field in plaintext_fields {
-        decrypted_log.push(field);
-    }
-
-    decrypted_log
+    // Convert plaintext bytes back to fields, we wrap it in BoundedVec and return it
+    let plaintext_fields = be_bytes_31_to_fields(plaintext_bytes.storage());
+    let real_length = plaintext_bytes.len() / 31;
+    BoundedVec::from_array(plaintext_fields)
 }
 
 unconstrained fn destructure_log_plaintext(
