@@ -8,7 +8,7 @@ use crate::{
     note::{note_emission::NoteEmission, note_interface::NoteType},
     oracle::{
         notes::{get_app_tag_as_sender, increment_app_tagging_secret_index_as_sender},
-        random::random,
+        random::random_with_max_byte_size,
     },
     utils::{bytes::{be_bytes_31_to_fields, get_random_bytes}, point::get_sign_of_point},
 };
@@ -403,8 +403,10 @@ where
     offset += log_bytes_as_fields.len();
 
     for i in offset..PRIVATE_LOG_SIZE_IN_FIELDS {
+        // We need to get a random value that fits in 31 bytes as when processing the log, we will use
+        // the `fields_to_be_bytes_31` function which expects a field contains at most 31 bytes.
         // Safety: randomness cannot be constrained.
-        final_log[i] = unsafe { random() };
+        final_log[i] = unsafe { random_with_max_byte_size::<31>() };
     }
 
     final_log
