@@ -437,8 +437,8 @@ where
     offset += log_bytes_as_fields.len();
 
     for i in offset..PRIVATE_LOG_SIZE_IN_FIELDS {
-        // We need to get a random value that fits in 31 bytes as when processing the log, we will use
-        // the `fields_to_be_bytes_31` function which expects a field contains at most 31 bytes.
+        // We need to get a random value that fits in 31 bytes to not leak information about the size of the log
+        // (all the "real" log fields contain at most 31 bytes because of the way we convert the bytes to fields).
         // Safety: randomness cannot be constrained.
         final_log[i] = unsafe { random_with_max_byte_size::<31>() };
     }
