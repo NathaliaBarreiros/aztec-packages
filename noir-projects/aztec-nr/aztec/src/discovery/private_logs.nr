@@ -56,14 +56,14 @@ pub unconstrained fn fetch_and_process_private_tagged_logs<Env>(
 /// note hashes in said transaction and the `compute_note_hash_and_nullifier` function.
 pub unconstrained fn do_process_log<Env>(
     contract_address: AztecAddress,
-    log_ciphertext: BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS>,
+    log: BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS>,
     tx_hash: Field,
     unique_note_hashes_in_tx: BoundedVec<Field, MAX_NOTE_HASHES_PER_TX>,
     first_nullifier_in_tx: Field,
     recipient: AztecAddress,
     compute_note_hash_and_nullifier: ComputeNoteHashAndNullifier<Env>,
 ) {
-    let log_plaintext = decrypt_log(log_ciphertext, recipient);
+    let log_plaintext = decrypt_log(log, recipient);
 
     // The first thing to do after decrypting the log is to determine what type of private log we're processing. We
     // currently just have two log types: 0 for private notes and 1 for partial notes. This will likely be expanded and
@@ -102,44 +102,56 @@ pub unconstrained fn do_process_log<Env>(
 }
 
 unconstrained fn decrypt_log(
-    // TODO: the following is wrong as ciphertext size is different from the plaintext size
-    log_ciphertext: BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS>,
+    log: BoundedVec<Field, PRIVATE_LOG_SIZE_IN_FIELDS>,
     recipient: AztecAddress,
 ) -> BoundedVec<Field, PRIVATE_LOG_PLAINTEXT_SIZE_IN_FIELDS> {
-    // let tag = log_ciphertext.get(0);
-    let eph_pk_x = log_ciphertext.get(1);
+    // let tag = log.get(0);
+    let eph_pk_x = log.get(1);
 
-    // Convert fields to bytes for the remaining data
-    let log_bytes = fields_to_be_bytes_31::<(PRIVATE_LOG_SIZE_IN_FIELDS - 2), (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31>(
-        array::subbvec(log_ciphertext, 2),
+    let log_ciphertext_fields =
+        array::subbvec::<Field, PRIVATE_LOG_SIZE_IN_FIELDS, PRIVATE_LOG_SIZE_IN_FIELDS - 2>(log, 2);
+
+    // Convert the ciphertext represented as fields to a byte representation (its original format)
+    let log_ciphertext = fields_to_be_bytes_31::<(PRIVATE_LOG_SIZE_IN_FIELDS - 2), (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31>(
+        log_ciphertext_fields,
     );
 
-    // Extract ephemeral public key sign byte
-    let eph_pk_sign_bool = log_bytes.get(0) as bool;
+    // First byte of the ciphertext represents the ephemeral public key sign
+    let eph_pk_sign_bool = log_ciphertext.get(0) as bool;
+    // With the sign and the x-coordinate of the ephemeral public key, we can reconstruct the point
     let eph_pk = point_from_x_coord_and_sign(eph_pk_x, eph_pk_sign_bool);
 
-    // We don't care about the header ciphertext, so we can just skip it (it only contains the contract address
-    // and we know that thanks to tagging. Having the header in the ciphertext is a tech debt).
-    // HEADER_CIPHERTEXT_SIZE_IN_BYTES is 48 bytes
-
     // Derive shared secret and symmetric key
-    // TODO: Obtain siloed secret from oracle and then derive shared secret in Noir instead of obtaining it directly
-    // from TS.
     let ciphertext_shared_secret = get_shared_secret(recipient, eph_pk);
-    // let ciphertext_shared_secret = derive_ecdh_shared_secret(recipient_sk, eph_pk);
     let (sym_key, iv) = derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_sha256(
         ciphertext_shared_secret,
     );
 
-    // Extract and decrypt main ciphertext
-    let ciphertext_start = HEADER_CIPHERTEXT_SIZE_IN_BYTES + 1;
-    let ciphertext: BoundedVec<u8, (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31 - HEADER_CIPHERTEXT_SIZE_IN_BYTES - 1> =
-        array::subbvec(log_bytes, ciphertext_start);
+    // Extract and decrypt header
+    let header_start = 1; // Skip eph_pk_sign byte
+    let header_ciphertext: [u8; HEADER_CIPHERTEXT_SIZE_IN_BYTES] =
+        array::subbvec(log_ciphertext, header_start).storage();
+    let header_plaintext = aes128_decrypt_oracle(header_ciphertext, iv, sym_key);
 
-    // TODO: Update the oracle to accept BoundedVec on input
+    // Extract ciphertext length from header (2 bytes, big-endian)
+    let ciphertext_length =
+        ((header_plaintext.get(32) as u32) << 8) | (header_plaintext.get(33) as u32);
+
+    // Extract and decrypt main ciphertext
+    let ciphertext_start = header_start + HEADER_CIPHERTEXT_SIZE_IN_BYTES;
+    let ciphertext: BoundedVec<u8, (PRIVATE_LOG_SIZE_IN_FIELDS - 2) * 31 - HEADER_CIPHERTEXT_SIZE_IN_BYTES - 1> =
+        array::subbvec(log_ciphertext, ciphertext_start);
+
+    // The result of subbvec call above includes padding bytes. We remove them in a for-loop.
+    let mut ciphertext = ciphertext;
+    for _ in 0..(ciphertext.len() - ciphertext_length) {
+        let _ = ciphertext.pop();
+    }
+
+    // Decrypt main ciphertext
     let plaintext_bytes = aes128_decrypt_oracle(ciphertext.storage(), iv, sym_key);
 
-    // Convert plaintext bytes back to fields, we wrap it in BoundedVec and return it
+    // Convert plaintext bytes back to fields
     be_bytes_31_to_fields(plaintext_bytes)
 }
 
