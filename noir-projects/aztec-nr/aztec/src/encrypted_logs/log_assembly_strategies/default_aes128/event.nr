@@ -1,12 +1,6 @@
 use crate::{
     context::PrivateContext,
-    encrypted_logs::{
-        encrypt::aes128::derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_sha256,
-        log_assembly_strategies::default_aes128::note::{
-            get_arr_of_size__log_bytes__from_PT, get_arr_of_size__log_bytes_padding__from_PT,
-            HEADER_CIPHERTEXT_SIZE_IN_BYTES,
-        },
-    },
+    encrypted_logs::encrypt::aes128::derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_sha256,
     event::event_interface::EventInterface,
     keys::{
         ecdh_shared_secret::derive_ecdh_shared_secret_using_aztec_address,
@@ -17,6 +11,12 @@ use crate::{
         random::random_with_max_byte_size,
     },
     utils::{bytes::{be_bytes_31_to_fields, get_random_bytes}, point::get_sign_of_point},
+};
+use super::{
+    arithmetic_generics_utils::{
+        get_arr_of_size__log_bytes__from_PT, get_arr_of_size__log_bytes_padding__from_PT,
+    },
+    log::HEADER_CIPHERTEXT_SIZE_IN_BYTES,
 };
 use dep::protocol_types::{
     address::AztecAddress,
