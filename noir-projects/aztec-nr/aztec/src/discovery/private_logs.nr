@@ -24,7 +24,7 @@ use crate::discovery::{
 use crate::encrypted_logs::encrypt::aes128::derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_sha256;
 use crate::encrypted_logs::log_assembly_strategies::default_aes128::note::HEADER_CIPHERTEXT_SIZE_IN_BYTES;
 use crate::oracle::aes128_decrypt::aes128_decrypt_oracle;
-use crate::oracle::shared_secret::get_shared_secret_oracle;
+use crate::oracle::shared_secret::get_shared_secret;
 use crate::utils::point::point_from_x_coord_and_sign;
 
 pub global PARTIAL_NOTE_COMPLETION_LOG_TAG_LEN: u32 = 1;
@@ -125,7 +125,7 @@ unconstrained fn decrypt_log(
     // Derive shared secret and symmetric key
     // TODO: Obtain siloed secret from oracle and then derive shared secret in Noir instead of obtaining it directly
     // from TS.
-    let ciphertext_shared_secret = get_shared_secret_oracle(recipient, eph_pk);
+    let ciphertext_shared_secret = get_shared_secret(recipient, eph_pk);
     // let ciphertext_shared_secret = derive_ecdh_shared_secret(recipient_sk, eph_pk);
     let (sym_key, iv) = derive_aes_symmetric_key_and_iv_from_ecdh_shared_secret_using_sha256(
         ciphertext_shared_secret,

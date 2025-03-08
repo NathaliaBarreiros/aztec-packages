@@ -453,10 +453,17 @@ export class Oracle {
     );
   }
 
-  async getSharedSecret([address]: ACVMField[], ephPk: ACVMField[]): Promise<ACVMField[]> {
+  // TODO(benesjan): When I had the ephPk input defined only as "ephPk: ACVMField[]" then ephPk was only 1 Field
+  // instead of 3. Does the reviewer know why I need to have the Point components directly listed here? It's ugly.
+  async getSharedSecret(
+    [address]: ACVMField[],
+    [ephPk_field_0]: ACVMField[],
+    [ephPk_field_1]: ACVMField[],
+    [ephPk_field_2]: ACVMField[],
+  ): Promise<ACVMField[]> {
     const secret = await this.typedOracle.getSharedSecret(
       AztecAddress.fromField(fromACVMField(address)),
-      Point.fromFields(ephPk.map(fromACVMField)),
+      Point.fromFields([ephPk_field_0, ephPk_field_1, ephPk_field_2].map(fromACVMField)),
     );
     return secret.toFields().map(toACVMField);
   }
