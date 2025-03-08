@@ -246,6 +246,40 @@ where
     plaintext_bytes
 }
 
+/// Computes an encrypted log for a note using AES-128 encryption in CBC mode.
+///
+/// The resulting log has the following format:
+/// ```text
+/// [
+///   tag: Field,                    // Tag for note discovery, derived from sender/recipient
+///   epk_x: Field,                  // X coordinate of ephemeral public key
+///   log_bytes: [Field],            // Encrypted data converted from bytes to fields, containing:
+///     [
+///       epk_sign: u8,              // Sign bit of ephemeral public key Y coordinate
+///       header_ciphertext: [u8],   // AES encrypted header containing:
+///         [
+///           contract_address: [u8; 32],  // Contract address that emitted the note
+///           ciphertext_length: [u8; 2],  // Length of main ciphertext in bytes
+///           padding: [u8; 14]            // PKCS#7 padding to AES block size
+///         ],
+///       ciphertext: [u8],          // AES encrypted note data containing:
+///         [
+///           storage_slot: [u8; 32],      // Storage slot of note
+///           note_type_id: [u8; 32],      // Type identifier of note
+///           note_data: [u8],             // Serialized note data
+///           padding: [u8]                // PKCS#7 padding to AES block size
+///         ],
+///       padding: [u8]              // Random padding to make log_bytes multiple of 31
+///     ],
+///   padding: [Field]               // Random padding to PRIVATE_LOG_SIZE_IN_FIELDS
+/// ]
+/// ```
+///
+/// The encryption process:
+/// 1. Generate ephemeral keypair and ECDH shared secret with recipient
+/// 2. Derive AES key and IV from shared secret using SHA-256
+/// 3. Encrypt header and note data separately using AES-128-CBC
+/// 4. Format into final log structure with padding
 fn compute_log<Note, let N: u32>(
     context: PrivateContext,
     note: Note,
